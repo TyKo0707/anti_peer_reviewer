@@ -6,6 +6,7 @@ import './App.css';
 import Header from './components/Header';
 import AuthorDashboard from './components/AuthorDashboard';
 import ReviewerDashboard from './components/ReviewerDashboard';
+import PublicReviews from './components/PublicReviews';
 import Home from './components/Home';
 import { Web3Provider } from './contexts/Web3Context';
 import { useProviderReset } from "./hooks/useProviderReset";
@@ -198,6 +199,7 @@ function App() {
               <Route path="/" element={<Home />} />
               <Route path="/author" element={<AuthorDashboard />} />
               <Route path="/reviewer" element={<ReviewerDashboard />} />
+              <Route path="/reviews" element={<PublicReviews />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>

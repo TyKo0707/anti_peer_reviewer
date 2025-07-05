@@ -24,9 +24,9 @@ export const useWeb3 = (): Web3ContextType => {
 
 // Contract addresses - these should be updated after deployment
 export const CONTRACT_ADDRESSES = {
-  PAPER_REGISTRY: '0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB',
-  REVIEW_POOL: '0x9E545E3C0baAB3E08CdfD552C960A1050f373042',
-  STAKE_MANAGER: '0xc3e53F4d16Ae77Db1c982e75a937B9f60FE63690',
+  PAPER_REGISTRY: '0x99bbA657f2BbC93c02D617f8bA121cB8Fc104Acf',
+  REVIEW_POOL: '0x0E801D84Fa97b50751Dbf25036d067dCf18858bF',
+  STAKE_MANAGER: '0x4826533B4897376654Bb4d4AD88B7faFD0C98528',
 };
 
 // Contract ABIs (simplified for PoC)
@@ -35,6 +35,7 @@ export const PAPER_REGISTRY_ABI = [
   'function getPaper(uint256 paperId) external view returns (tuple(string cid, address author, uint256 submissionTime, uint256 publicationFee, bool isPublished, uint256 totalScore, uint256 reviewCount, bool isEmbargoed, uint256 embargoEndTime, string[] keywords, string fieldClassification))',
   'function getAuthorPapers(address author) external view returns (uint256[])',
   'function publicationFee() external view returns (uint256)',
+  'uint256 public nextPaperId',
   'event PaperSubmitted(uint256 indexed paperId, address indexed author, string cid)'
 ];
 
@@ -46,6 +47,8 @@ export const REVIEW_POOL_ABI = [
   'function getReview(uint256 paperId, address reviewer) external view returns (tuple(uint256 paperId, address reviewer, int8 score, bytes32 commentHash, string encryptedComment, bool isRevealed, uint256 submitTime))',
   'function isAssignedReviewer(uint256 paperId, address reviewer) external view returns (bool)',
   'function assignments(uint256 paperId) external view returns (tuple(uint256, address[], uint256, uint256, bool))',
+  'function getAllReviews(uint256 paperId) external view returns (tuple(uint256 paperId, address reviewer, int8 score, bytes32 commentHash, string encryptedComment, bool isRevealed, uint256 submitTime)[])',
+  'function getReviewsForPaper(uint256 paperId) external view returns (address[] reviewers, int8[] scores, string[] comments, uint256[] submitTimes, bool isFinalized)',
   'event ReviewersAssigned(uint256 indexed paperId, address[] reviewers)',
   'event ReviewSubmitted(uint256 indexed paperId, address indexed reviewer, bytes32 commentHash)'
 ];

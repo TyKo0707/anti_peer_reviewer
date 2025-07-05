@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import { useWeb3, CONTRACT_ADDRESSES, PAPER_REGISTRY_ABI } from '../contexts/Web3Context';
+import { useWeb3, CONTRACT_ADDRESSES, PAPER_REGISTRY_ABI, REVIEW_POOL_ABI } from '../contexts/Web3Context';
+import ReviewsDisplay from './ReviewsDisplay';
 
 interface Paper {
   id: number;
@@ -15,6 +16,7 @@ interface Paper {
   embargoEndTime: number;
   keywords: string[];
   fieldClassification: string;
+  isFinalized: boolean;
 }
 
 const AuthorDashboard: React.FC = () => {
@@ -59,11 +61,23 @@ const AuthorDashboard: React.FC = () => {
     setLoading(true);
     try {
       const contract = new ethers.Contract(CONTRACT_ADDRESSES.PAPER_REGISTRY, PAPER_REGISTRY_ABI, provider);
+      const reviewPoolContract = new ethers.Contract(CONTRACT_ADDRESSES.REVIEW_POOL, REVIEW_POOL_ABI, provider);
       const paperIds = await contract.getAuthorPapers(account);
       
       const papersData = await Promise.all(
         paperIds.map(async (id: bigint) => {
           const paper = await contract.getPaper(id);
+          
+          // Check if paper is finalized
+          let isFinalized = false;
+          try {
+            const assignment = await reviewPoolContract.assignments(id);
+            isFinalized = assignment[4]; // isCompleted field
+          } catch (err) {
+            // If error, assume not finalized
+            isFinalized = false;
+          }
+          
           return {
             id: Number(id),
             cid: paper.cid,
@@ -76,7 +90,8 @@ const AuthorDashboard: React.FC = () => {
             isEmbargoed: paper.isEmbargoed,
             embargoEndTime: Number(paper.embargoEndTime),
             keywords: paper.keywords,
-            fieldClassification: paper.fieldClassification
+            fieldClassification: paper.fieldClassification,
+            isFinalized: isFinalized
           };
         })
       );
@@ -153,9 +168,9 @@ const AuthorDashboard: React.FC = () => {
   };
 
   const getStatusBadge = (paper: Paper) => {
-    if (paper.isPublished) return <span className="status-badge published">Published</span>;
+    if (paper.isPublished) return <span className="status-badge published">Accepted</span>;
+    if (paper.isFinalized && !paper.isPublished) return <span className="status-badge rejected">Rejected</span>;
     if (paper.reviewCount === 0) return <span className="status-badge pending">Pending Assignment</span>;
-    if (paper.reviewCount > 0 && paper.totalScore < 3) return <span className="status-badge rejected">Under Review</span>;
     return <span className="status-badge pending">Under Review</span>;
   };
 
@@ -284,6 +299,11 @@ const AuthorDashboard: React.FC = () => {
               </div>
               {getStatusBadge(paper)}
             </div>
+            
+            {/* Show reviews for finalized papers */}
+            {paper.isFinalized && (
+              <ReviewsDisplay paperId={paper.id} />
+            )}
           </div>
         ))}
       </div>

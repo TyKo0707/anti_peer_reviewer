@@ -1,15 +1,23 @@
-import "@matterlabs/hardhat-zksync-solc";
-import "@matterlabs/hardhat-zksync-deploy";
 import "@nomicfoundation/hardhat-ethers";
+import { config as dotenvConfig } from "dotenv";
+
+dotenvConfig();
 
 export default {
-  zksolc: { version: "1.4.0", compilerSource: "binary" },
-  solidity: { version: "0.8.24" },
+  solidity: {
+    version: "0.8.24",
+    settings: {
+      optimizer: {
+        enabled: true,
+        runs: 200,
+      },
+    },
+  },
   networks: {
-    zkSyncTestnet: {
-      url: "https://sepolia.era.zksync.dev",
-      ethNetwork: "sepolia",
-      zksync: true,
+    sepolia: {
+      url: process.env.SEPOLIA_RPC_URL || "https://ethereum-sepolia.blockpi.network/v1/rpc/public",
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      chainId: 11155111,
     },
   },
 };

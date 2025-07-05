@@ -1,48 +1,57 @@
 import hre from "hardhat";
-import { Provider, Wallet } from "zksync-ethers";
-import { Deployer } from "@matterlabs/hardhat-zksync-deploy";
+import { ethers } from "hardhat";
 import * as dotenv from "dotenv";
 dotenv.config();
 
 async function main() {
-  const {
-    PRIVATE_KEY,
-    VRF_COORDINATOR_ADDRESS,
-    VRF_KEY_HASH,
-    VRF_SUBSCRIPTION_ID,
-  } = process.env;
+  const { PRIVATE_KEY } = process.env;
 
-  if (!PRIVATE_KEY || !VRF_COORDINATOR_ADDRESS || !VRF_KEY_HASH || !VRF_SUBSCRIPTION_ID) {
-    throw new Error("Missing env vars");
+  if (!PRIVATE_KEY) {
+    throw new Error("Missing PRIVATE_KEY env var");
   }
 
-  const provider: Provider =
-    hre.zkSyncProvider ?? new Provider("https://sepolia.era.zksync.dev");
-  const wallet   = new Wallet(PRIVATE_KEY, provider);
-  const deployer = new Deployer(hre, wallet);
+  // Get signer from hardhat ethers
+  const [deployer] = await ethers.getSigners();
+  console.log("Deploying contracts with account:", deployer.address);
+  console.log("Account balance:", ethers.formatEther(await ethers.provider.getBalance(deployer.address)));
 
   /* 1 ── StakeManager */
-  const stakeArt   = await deployer.loadArtifact("StakeManager");
-  const stakeCtr   = await deployer.deploy(stakeArt, []);
-  console.log("StakeManager:", stakeCtr.address);
+  console.log("\nDeploying StakeManager...");
+  const StakeManagerFactory = await ethers.getContractFactory("StakeManager");
+  const stakeManager = await StakeManagerFactory.deploy();
+  await stakeManager.waitForDeployment();
+  const stakeManagerAddress = await stakeManager.getAddress();
+  console.log("StakeManager:", stakeManagerAddress);
 
   /* 2 ── PaperRegistry */
-  const regArt     = await deployer.loadArtifact("PaperRegistry");
-  const regCtr     = await deployer.deploy(regArt, []);
-  console.log("PaperRegistry:", regCtr.address);
+  console.log("\nDeploying PaperRegistry...");
+  const PaperRegistryFactory = await ethers.getContractFactory("PaperRegistry");
+  const paperRegistry = await PaperRegistryFactory.deploy();
+  await paperRegistry.waitForDeployment();
+  const paperRegistryAddress = await paperRegistry.getAddress();
+  console.log("PaperRegistry:", paperRegistryAddress);
 
-  /* 3 ── ReviewPool (needs VRF + two addresses) */
-  const poolArt    = await deployer.loadArtifact("ReviewPool");
-  const poolCtr    = await deployer.deploy(poolArt, [
-    VRF_COORDINATOR_ADDRESS,
-    VRF_KEY_HASH,
-    BigInt(VRF_SUBSCRIPTION_ID),          // uint64 in constructor
-    stakeCtr.address,
-    regCtr.address,
-  ]);
-  console.log("ReviewPool :", poolCtr.address);
+  /* 3 ── ReviewPool (no VRF needed) */
+  console.log("\nDeploying ReviewPool...");
+  const ReviewPoolFactory = await ethers.getContractFactory("ReviewPool");
+  const reviewPool = await ReviewPoolFactory.deploy(
+    stakeManagerAddress,
+    paperRegistryAddress
+  );
+  await reviewPool.waitForDeployment();
+  const reviewPoolAddress = await reviewPool.getAddress();
+  console.log("ReviewPool:", reviewPoolAddress);
 
-  console.log("\nConstructor params passed OK");
+  /* 4 ── Set ReviewPool address in PaperRegistry */
+  console.log("\nSetting ReviewPool address in PaperRegistry...");
+  await paperRegistry.setReviewPool(reviewPoolAddress);
+  console.log("ReviewPool address set in PaperRegistry");
+
+  console.log("\n=== Deployment Summary ===");
+  console.log("StakeManager:", stakeManagerAddress);
+  console.log("PaperRegistry:", paperRegistryAddress);
+  console.log("ReviewPool:", reviewPoolAddress);
+  console.log("\nUpdate CONTRACT_ADDRESSES in frontend with these addresses.");
 }
 
 main()

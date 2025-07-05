@@ -12,6 +12,7 @@ const Header: React.FC = () => {
         <Link to="/">Home</Link>
         <Link to="/author">Author</Link>
         <Link to="/reviewer">Reviewer</Link>
+        <Link to="/reviews">Reviews</Link>
         {account ? (
           <div className="wallet-button">
             {account.slice(0, 6)}...{account.slice(-4)}

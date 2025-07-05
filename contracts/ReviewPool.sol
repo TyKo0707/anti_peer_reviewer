@@ -156,8 +156,18 @@ contract ReviewPool is Ownable {
     function finalizeReview(uint256 paperId) internal {
         require(!assignments[paperId].isCompleted, "Already completed");
         
-        PaperRegistry.Paper memory paper = paperRegistry.getPaper(paperId);
-        bool accepted = paper.totalScore >= 3 && paper.reviewCount >= 2;
+        // Count positive reviews (score >= 1)
+        address[] memory assignedReviewers = assignments[paperId].assignedReviewers;
+        uint256 positiveReviews = 0;
+        
+        for (uint256 i = 0; i < assignedReviewers.length; i++) {
+            Review memory review = reviews[paperId][assignedReviewers[i]];
+            if (review.reviewer != address(0) && review.isRevealed && review.score >= 1) {
+                positiveReviews++;
+            }
+        }
+        
+        bool accepted = positiveReviews >= requiredPositiveReviews;
         
         assignments[paperId].isCompleted = true;
         
@@ -236,5 +246,58 @@ contract ReviewPool is Ownable {
     
     function getReview(uint256 paperId, address reviewer) external view returns (Review memory) {
         return reviews[paperId][reviewer];
+    }
+    
+    function getAllReviews(uint256 paperId) external view returns (Review[] memory) {
+        require(assignments[paperId].isCompleted, "Reviews not yet visible - paper not finalized");
+        
+        address[] memory assignedReviewers = assignments[paperId].assignedReviewers;
+        Review[] memory paperReviews = new Review[](assignedReviewers.length);
+        
+        for (uint256 i = 0; i < assignedReviewers.length; i++) {
+            paperReviews[i] = reviews[paperId][assignedReviewers[i]];
+        }
+        
+        return paperReviews;
+    }
+    
+    function getReviewsForPaper(uint256 paperId) external view returns (
+        address[] memory reviewers,
+        int8[] memory scores,
+        string[] memory comments,
+        uint256[] memory submitTimes,
+        bool isFinalized
+    ) {
+        isFinalized = assignments[paperId].isCompleted;
+        require(isFinalized, "Reviews not yet visible - paper not finalized");
+        
+        address[] memory assignedReviewers = assignments[paperId].assignedReviewers;
+        uint256 reviewCount = 0;
+        
+        // Count actual reviews
+        for (uint256 i = 0; i < assignedReviewers.length; i++) {
+            if (reviews[paperId][assignedReviewers[i]].reviewer != address(0)) {
+                reviewCount++;
+            }
+        }
+        
+        // Initialize arrays
+        reviewers = new address[](reviewCount);
+        scores = new int8[](reviewCount);
+        comments = new string[](reviewCount);
+        submitTimes = new uint256[](reviewCount);
+        
+        // Fill arrays with actual reviews
+        uint256 index = 0;
+        for (uint256 i = 0; i < assignedReviewers.length; i++) {
+            Review memory review = reviews[paperId][assignedReviewers[i]];
+            if (review.reviewer != address(0)) {
+                reviewers[index] = review.reviewer;
+                scores[index] = review.score;
+                comments[index] = review.encryptedComment;
+                submitTimes[index] = review.submitTime;
+                index++;
+            }
+        }
     }
 }
