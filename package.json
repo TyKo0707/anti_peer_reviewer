@@ -1,0 +1,41 @@
+{
+  "name": "decentralized-peer-review",
+  "version": "1.0.0",
+  "description": "A decentralized peer-review system built on blockchain",
+  "main": "index.js",
+  "scripts": {
+    "compile": "hardhat compile",
+    "deploy": "hardhat run scripts/deploy.ts --network zkSyncTestnet",
+    "frontend": "cd frontend && npm start",
+    "build": "hardhat compile && cd frontend && npm run build",
+    "test": "hardhat test"
+  },
+  "keywords": [
+    "blockchain",
+    "peer-review",
+    "decentralized",
+    "ethereum",
+    "zksync"
+  ],
+  "author": "Decentralized Peer Review Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@chainlink/contracts": "^0.6.1",
+    "@matterlabs/hardhat-zksync-deploy": "^1.7.0",
+    "@matterlabs/hardhat-zksync-solc": "^1.4.0",
+    "@nomicfoundation/hardhat-ethers": "^3.0.9",
+    "@openzeppelin/contracts": "^4.9.0",
+    "@types/node": "^24.0.10",
+    "dotenv": "^17.0.1",
+    "ethers": "^6.15.0",
+    "hardhat": "^2.19.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0",
+    "zksync-ethers": "^6.18.0"
+  },
+  "dependencies": {
+    "@chainlink/contracts": "^0.6.1",
+    "@openzeppelin/contracts": "^4.9.0",
+    "zksync-web3": "^0.17.1"
+  }
+}
