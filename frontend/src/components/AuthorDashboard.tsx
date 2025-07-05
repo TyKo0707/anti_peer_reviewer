@@ -28,6 +28,7 @@ const AuthorDashboard: React.FC = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [publicationFee, setPublicationFee] = useState<string>('0');
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfValidationResult, setPdfValidationResult] = useState<{ valid: boolean, reason?: string } | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -131,6 +132,18 @@ const AuthorDashboard: React.FC = () => {
     return `https://${process.env.REACT_APP_S3_BUCKET!}.s3.${process.env.REACT_APP_AWS_REGION!}.amazonaws.com/${key}`;
   };
 
+  const validatePDF = async (file: File): Promise<{ valid: boolean; reason?: string }> => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch("http://localhost:8000/validate", {
+      method: "POST",
+      body: formData,
+    });
+
+    return await response.json();
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
     setFormData(prev => ({
@@ -141,13 +154,24 @@ const AuthorDashboard: React.FC = () => {
 
   const handleSubmitPaper = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!signer || !formData.cid.trim()) return;
+    if (!signer || !formData.cid.trim() || !pdfFile) return;
 
     setLoading(true);
     setError(null);
     setSuccess(null);
 
     try {
+      const validation = await validatePDF(pdfFile);
+      if (!validation.valid) {
+        setError(`Validation failed: ${validation.reason || 'Unknown issue'}`);
+        setLoading(false);
+        return;
+      }
+
+      // Upload to S3
+      const uploadedUrl = await uploadToS3(pdfFile);
+      setFormData(prev => ({ ...prev, cid: uploadedUrl }));
+
       const contract = new ethers.Contract(CONTRACT_ADDRESSES.PAPER_REGISTRY, PAPER_REGISTRY_ABI, signer);
       const keywords = formData.keywords.split(',').map(k => k.trim()).filter(k => k);
       const embargoEndTime = formData.isEmbargoed && formData.embargoEndTime ?
@@ -218,17 +242,36 @@ const AuthorDashboard: React.FC = () => {
         {success && <div className="success">{success}</div>}
 
         <div className="form-group">
-            <label htmlFor="pdfFile">Upload PDF *</label>
-            <input
-              type="file"
-              id="pdfFile"
-              accept="application/pdf"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file && file.type === "application/pdf") setPdfFile(file);
-              }}
-            />
-          </div>
+          <label htmlFor="pdfFile">Upload PDF *</label>
+          <input
+            type="file"
+            id="pdfFile"
+            accept="application/pdf"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (file && file.type === "application/pdf") {
+                setPdfFile(file);
+                try {
+                  const result = await validatePDF(file);
+                  setPdfValidationResult(result);  // You need to add this state: const [pdfValidationResult, setPdfValidationResult] = useState(null);
+                } catch (err) {
+                  setPdfValidationResult({ valid: false, reason: 'Validation server error' });
+                }
+              } else {
+                setPdfValidationResult(null);
+              }
+            }}
+          />
+          {pdfValidationResult && (
+            <div style={{ marginTop: '0.5rem' }}>
+              {pdfValidationResult.valid ? (
+                <span style={{ color: 'green' }}>✅ PDF format looks valid.</span>
+              ) : (
+                <span style={{ color: 'red' }}>❌ Invalid format: {pdfValidationResult.reason}</span>
+              )}
+            </div>
+          )}
+        </div>
 
         <form onSubmit={handleSubmitPaper}>
           <div className="form-group">
