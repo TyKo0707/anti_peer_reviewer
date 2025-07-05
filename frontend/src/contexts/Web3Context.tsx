@@ -24,9 +24,9 @@ export const useWeb3 = (): Web3ContextType => {
 
 // Contract addresses - these should be updated after deployment
 export const CONTRACT_ADDRESSES = {
-  PAPER_REGISTRY: '0x...',
-  REVIEW_POOL: '0x...',
-  STAKE_MANAGER: '0x...',
+  PAPER_REGISTRY: '0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE',
+  REVIEW_POOL: '0x68B1D87F95878fE05B998F19b66F4baba5De1aed',
+  STAKE_MANAGER: '0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1',
 };
 
 // Contract ABIs (simplified for PoC)
@@ -45,6 +45,7 @@ export const REVIEW_POOL_ABI = [
   'function getAssignedReviewers(uint256 paperId) external view returns (address[])',
   'function getReview(uint256 paperId, address reviewer) external view returns (tuple(uint256 paperId, address reviewer, int8 score, bytes32 commentHash, string encryptedComment, bool isRevealed, uint256 submitTime))',
   'function isAssignedReviewer(uint256 paperId, address reviewer) external view returns (bool)',
+  'function assignments(uint256 paperId) external view returns (tuple(uint256, address[], uint256, uint256, bool))',
   'event ReviewersAssigned(uint256 indexed paperId, address[] reviewers)',
   'event ReviewSubmitted(uint256 indexed paperId, address indexed reviewer, bytes32 commentHash)'
 ];
@@ -56,5 +57,7 @@ export const STAKE_MANAGER_ABI = [
   'function balanceOf(address account) external view returns (uint256)',
   'function transfer(address to, uint256 amount) external returns (bool)',
   'function MIN_STAKE() external view returns (uint256)',
+  'function claimFaucetTokens() external',
+  'function hasClaimedFaucet(address account) external view returns (bool)',
   'event ReviewerStaked(address indexed reviewer, uint256 amount)'
 ];
