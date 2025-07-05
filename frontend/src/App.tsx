@@ -109,6 +109,11 @@ function App() {
     }
   };
 
+  const forceRefresh = () => {
+    console.log('🔄 Force refreshing application...');
+    window.location.reload();
+  };
+
   useEffect(() => {
     // Check network on initial load
     checkNetwork();
@@ -190,7 +195,7 @@ function App() {
   }
 
   return (
-    <Web3Provider value={{ account, provider, signer, connectWallet }}>
+    <Web3Provider value={{ account, provider, signer, connectWallet, forceRefresh }}>
       <Router>
         <div className="App">
           <Header />

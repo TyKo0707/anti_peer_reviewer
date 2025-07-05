@@ -44,7 +44,7 @@ const PublicReviews: React.FC = () => {
       const reviewPool = new ethers.Contract(CONTRACT_ADDRESSES.REVIEW_POOL, REVIEW_POOL_ABI, provider);
       
       // Get next paper ID to know how many papers exist
-      const nextPaperId = await paperRegistry.nextPaperId;
+      const nextPaperId = await paperRegistry.nextPaperId();
       const totalPapers = Number(nextPaperId);
       
       if (totalPapers === 0) {
@@ -54,35 +54,51 @@ const PublicReviews: React.FC = () => {
       
       // Load all papers
       const papersData: Paper[] = [];
+      console.log(`Loading ${totalPapers} papers...`);
+      
       for (let i = 0; i < totalPapers; i++) {
         try {
           const paper = await paperRegistry.getPaper(i);
+          console.log(`Paper ${i}:`, {
+            cid: paper.cid,
+            isPublished: paper.isPublished,
+            reviewCount: Number(paper.reviewCount),
+            totalScore: Number(paper.totalScore)
+          });
           
           // Check if paper is finalized
           let isFinalized = false;
           try {
             const assignment = await reviewPool.assignments(i);
             isFinalized = assignment[4]; // isCompleted field
+            console.log(`Paper ${i} assignment:`, {
+              paperId: Number(assignment[0]),
+              reviewersCount: assignment[1].length,
+              deadline: Number(assignment[2]),
+              reviewCount: Number(assignment[3]),
+              isCompleted: assignment[4]
+            });
           } catch (err) {
-            // If error, assume not finalized
+            console.log(`No assignment found for paper ${i}:`, err);
             isFinalized = false;
           }
           
-          // Only include finalized papers (where reviews are visible)
-          if (isFinalized) {
-            papersData.push({
-              id: i,
-              cid: paper.cid,
-              author: paper.author,
-              submissionTime: Number(paper.submissionTime),
-              isPublished: paper.isPublished,
-              totalScore: Number(paper.totalScore),
-              reviewCount: Number(paper.reviewCount),
-              keywords: paper.keywords,
-              fieldClassification: paper.fieldClassification,
-              isFinalized: isFinalized
-            });
-          }
+          console.log(`Paper ${i} isFinalized: ${isFinalized}`);
+          
+          // Include ALL papers for now to debug
+          papersData.push({
+            id: i,
+            cid: paper.cid,
+            author: paper.author,
+            submissionTime: Number(paper.submissionTime),
+            isPublished: paper.isPublished,
+            totalScore: Number(paper.totalScore),
+            reviewCount: Number(paper.reviewCount),
+            keywords: paper.keywords,
+            fieldClassification: paper.fieldClassification,
+            isFinalized: isFinalized
+          });
+          
         } catch (err) {
           console.error(`Error loading paper ${i}:`, err);
         }
@@ -133,43 +149,50 @@ const PublicReviews: React.FC = () => {
         <p>Browse all finalized papers and their reviews. Reviews are visible to promote transparency and enable dispute resolution.</p>
         
         {/* Search and Filter Controls */}
-        <div className="mb-4 space-y-4">
-          <div className="flex flex-wrap gap-4">
-            <div className="flex-1 min-w-64">
+        <div className="form-group">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'end' }}>
+            <div style={{ flex: '1', minWidth: '250px' }}>
+              <label htmlFor="search">Search Papers</label>
               <input
+                id="search"
                 type="text"
                 placeholder="Search papers, fields, or keywords..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
             
-            <select
-              value={filterField}
-              onChange={(e) => setFilterField(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">All Fields</option>
-              {uniqueFields.map(field => (
-                <option key={field} value={field}>{field}</option>
-              ))}
-            </select>
+            <div>
+              <label htmlFor="field-filter">Field</label>
+              <select
+                id="field-filter"
+                value={filterField}
+                onChange={(e) => setFilterField(e.target.value)}
+              >
+                <option value="">All Fields</option>
+                {uniqueFields.map(field => (
+                  <option key={field} value={field}>{field}</option>
+                ))}
+              </select>
+            </div>
             
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All Status</option>
-              <option value="accepted">Accepted</option>
-              <option value="rejected">Rejected</option>
-            </select>
+            <div>
+              <label htmlFor="status-filter">Status</label>
+              <select
+                id="status-filter"
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+              >
+                <option value="all">All Status</option>
+                <option value="accepted">Accepted</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </div>
             
             <button
               onClick={loadAllPapers}
               disabled={loading}
-              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:bg-gray-400"
+              className="button"
             >
               {loading ? 'Loading...' : 'Refresh'}
             </button>
@@ -177,35 +200,55 @@ const PublicReviews: React.FC = () => {
         </div>
         
         {error && (
-          <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
+          <div className="error">
             {error}
           </div>
         )}
         
         {loading && (
-          <div className="text-center py-8">
+          <div style={{ textAlign: 'center', padding: '2rem' }}>
             <div className="loading">Loading papers...</div>
           </div>
         )}
         
         {!loading && filteredPapers.length === 0 && (
-          <div className="text-center py-8 text-gray-500">
+          <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
             {papers.length === 0 
-              ? "No finalized papers with public reviews yet." 
+              ? "No papers found yet." 
               : "No papers match your search criteria."}
           </div>
         )}
         
+        {/* Debug Section */}
+        {papers.length > 0 && (
+          <div style={{ 
+            marginBottom: '1rem', 
+            padding: '0.75rem', 
+            backgroundColor: '#e6f3ff', 
+            border: '1px solid #0066cc', 
+            borderRadius: '4px', 
+            fontSize: '0.9rem' 
+          }}>
+            <strong>Debug Info:</strong> Found {papers.length} total papers. 
+            Finalized: {papers.filter(p => p.isFinalized).length}, 
+            Published: {papers.filter(p => p.isPublished).length}
+          </div>
+        )}
+        
         {filteredPapers.length > 0 && (
-          <div className="space-y-4">
-            <div className="text-sm text-gray-600 mb-4">
-              Showing {filteredPapers.length} of {papers.length} finalized papers
+          <div>
+            <div style={{ 
+              fontSize: '0.9rem', 
+              color: '#666', 
+              marginBottom: '1rem' 
+            }}>
+              Showing {filteredPapers.length} of {papers.length} papers
             </div>
             
             {filteredPapers.map(paper => (
               <div key={paper.id} className="paper-card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div className="flex-1">
+                  <div style={{ flex: 1 }}>
                     <h3>Paper #{paper.id}</h3>
                     <div className="paper-meta">
                       <p><strong>CID:</strong> {paper.cid}</p>
@@ -217,11 +260,17 @@ const PublicReviews: React.FC = () => {
                       <p><strong>Score:</strong> {paper.totalScore}</p>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-2">
+                  <div style={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    alignItems: 'flex-end', 
+                    gap: '0.5rem' 
+                  }}>
                     {getStatusBadge(paper)}
                     <button
                       onClick={() => setSelectedPaper(selectedPaper === paper.id ? null : paper.id)}
-                      className="px-3 py-1 bg-gray-500 text-white rounded text-sm hover:bg-gray-600"
+                      className="button secondary"
+                      style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
                     >
                       {selectedPaper === paper.id ? 'Hide Reviews' : 'View Reviews'}
                     </button>
@@ -230,10 +279,20 @@ const PublicReviews: React.FC = () => {
                 
                 {/* Show reviews when selected */}
                 {selectedPaper === paper.id && (
-                  <div className="mt-4 border-t pt-4">
+                  <div style={{ 
+                    marginTop: '1rem', 
+                    borderTop: '1px solid #ddd', 
+                    paddingTop: '1rem' 
+                  }}>
                     <ReviewsDisplay paperId={paper.id} />
-                    <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
-                      <p className="text-sm text-yellow-800">
+                    <div style={{ 
+                      marginTop: '1rem', 
+                      padding: '0.75rem', 
+                      backgroundColor: '#fff3cd', 
+                      border: '1px solid #ffeaa7', 
+                      borderRadius: '4px' 
+                    }}>
+                      <p style={{ fontSize: '0.9rem', color: '#856404', margin: 0 }}>
                         <strong>Dispute Process:</strong> If you believe a review is unfair or inaccurate, 
                         you can contact the paper author or platform administrators. 
                         All reviews are permanent and transparent to ensure accountability.

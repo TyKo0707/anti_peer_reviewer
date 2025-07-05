@@ -6,6 +6,7 @@ interface Web3ContextType {
   provider: ethers.BrowserProvider | null;
   signer: ethers.JsonRpcSigner | null;
   connectWallet: () => Promise<void>;
+  forceRefresh: () => void;
 }
 
 const Web3Context = createContext<Web3ContextType | undefined>(undefined);
@@ -24,9 +25,9 @@ export const useWeb3 = (): Web3ContextType => {
 
 // Contract addresses - these should be updated after deployment
 export const CONTRACT_ADDRESSES = {
-  PAPER_REGISTRY: '0x99bbA657f2BbC93c02D617f8bA121cB8Fc104Acf',
-  REVIEW_POOL: '0x0E801D84Fa97b50751Dbf25036d067dCf18858bF',
-  STAKE_MANAGER: '0x4826533B4897376654Bb4d4AD88B7faFD0C98528',
+  PAPER_REGISTRY: '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
+  REVIEW_POOL: '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0',
+  STAKE_MANAGER: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
 };
 
 // Contract ABIs (simplified for PoC)
@@ -35,7 +36,7 @@ export const PAPER_REGISTRY_ABI = [
   'function getPaper(uint256 paperId) external view returns (tuple(string cid, address author, uint256 submissionTime, uint256 publicationFee, bool isPublished, uint256 totalScore, uint256 reviewCount, bool isEmbargoed, uint256 embargoEndTime, string[] keywords, string fieldClassification))',
   'function getAuthorPapers(address author) external view returns (uint256[])',
   'function publicationFee() external view returns (uint256)',
-  'uint256 public nextPaperId',
+  'function nextPaperId() external view returns (uint256)',
   'event PaperSubmitted(uint256 indexed paperId, address indexed author, string cid)'
 ];
 
