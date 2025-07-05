@@ -139,6 +139,32 @@ const ReviewerDashboard: React.FC = () => {
     }
   };
 
+  const handleETHFaucet = async () => {
+    if (!signer) return;
+    
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+    
+    try {
+      // Send 0.001 ETH to the StakeManager contract to trigger auto-faucet
+      const tx = await signer.sendTransaction({
+        to: CONTRACT_ADDRESSES.STAKE_MANAGER,
+        value: ethers.parseEther('0.001')
+      });
+      await tx.wait();
+      
+      setSuccess('Successfully received 2000 GO tokens! (ETH was returned)');
+      await loadTokenBalance();
+      await checkFaucetStatus();
+    } catch (err: any) {
+      setError(err.message || 'Failed to get tokens via ETH');
+      console.error('Error with ETH faucet:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const loadAssignedPapers = async () => {
     if (!account || !provider) return;
     
@@ -281,15 +307,11 @@ const ReviewerDashboard: React.FC = () => {
     setSuccess(null);
     
     try {
-      // Create hash of comment
-      const commentHash = ethers.keccak256(ethers.toUtf8Bytes(reviewForm.comment));
-      
       const contract = new ethers.Contract(CONTRACT_ADDRESSES.REVIEW_POOL, REVIEW_POOL_ABI, signer);
       const tx = await contract.submitReview(
         reviewForm.paperId,
         reviewForm.score,
-        commentHash,
-        reviewForm.comment // In practice, this would be encrypted
+        reviewForm.comment
       );
       
       await tx.wait();
@@ -374,16 +396,29 @@ const ReviewerDashboard: React.FC = () => {
         </div>
         
         <div style={{ marginTop: '1rem' }}>
-          {/* Faucet button */}
+          {/* Faucet buttons */}
           {parseFloat(tokenBalance) < parseFloat(minStake) && !hasClaimedFaucet && (
-            <button 
-              className="button" 
-              onClick={handleClaimFaucet}
-              disabled={loading}
-              style={{ marginRight: '1rem', marginBottom: '1rem' }}
-            >
-              {loading ? 'Claiming...' : 'Claim 2000 GO Tokens'}
-            </button>
+            <div style={{ marginBottom: '1rem' }}>
+              <button 
+                className="button" 
+                onClick={handleClaimFaucet}
+                disabled={loading}
+                style={{ marginRight: '1rem', marginBottom: '0.5rem' }}
+              >
+                {loading ? 'Claiming...' : 'Claim 2000 GO Tokens'}
+              </button>
+              <button 
+                className="button" 
+                onClick={handleETHFaucet}
+                disabled={loading}
+                style={{ marginRight: '1rem', marginBottom: '0.5rem', backgroundColor: '#4299e1' }}
+              >
+                {loading ? 'Processing...' : 'Send 0.001 ETH → Get 2000 GO'}
+              </button>
+              <p style={{ color: '#718096', fontSize: '0.875rem', margin: '0.5rem 0' }}>
+                💡 If GO faucet fails (no gas), use the ETH option instead
+              </p>
+            </div>
           )}
           
           {hasClaimedFaucet && parseFloat(tokenBalance) < parseFloat(minStake) && (

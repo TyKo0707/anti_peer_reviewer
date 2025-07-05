@@ -24,9 +24,9 @@ export const useWeb3 = (): Web3ContextType => {
 
 // Contract addresses - these should be updated after deployment
 export const CONTRACT_ADDRESSES = {
-  PAPER_REGISTRY: '0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE',
-  REVIEW_POOL: '0x68B1D87F95878fE05B998F19b66F4baba5De1aed',
-  STAKE_MANAGER: '0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1',
+  PAPER_REGISTRY: '0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB',
+  REVIEW_POOL: '0x9E545E3C0baAB3E08CdfD552C960A1050f373042',
+  STAKE_MANAGER: '0xc3e53F4d16Ae77Db1c982e75a937B9f60FE63690',
 };
 
 // Contract ABIs (simplified for PoC)
@@ -40,7 +40,7 @@ export const PAPER_REGISTRY_ABI = [
 
 export const REVIEW_POOL_ABI = [
   'function assignReviewers(uint256 paperId) external',
-  'function submitReview(uint256 paperId, int8 score, bytes32 commentHash, string calldata encryptedComment) external',
+  'function submitReview(uint256 paperId, int8 score, string calldata comment) external',
   'function revealReview(uint256 paperId, int8 score, string calldata plainTextComment) external',
   'function getAssignedReviewers(uint256 paperId) external view returns (address[])',
   'function getReview(uint256 paperId, address reviewer) external view returns (tuple(uint256 paperId, address reviewer, int8 score, bytes32 commentHash, string encryptedComment, bool isRevealed, uint256 submitTime))',

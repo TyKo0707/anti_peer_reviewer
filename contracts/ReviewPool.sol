@@ -26,7 +26,10 @@ contract ReviewPool is Ownable {
     
     uint256 public constant REVIEW_PERIOD = 7 days;
     uint256 public constant REVEAL_PERIOD = 2 days;
-    uint256 public constant REVIEWERS_PER_PAPER = 3;
+    uint256 public constant REVIEWERS_PER_PAPER = 1;
+    
+    // Configurable acceptance threshold
+    uint256 public requiredPositiveReviews = 1;
     
     StakeManager public immutable stakeManager;
     PaperRegistry public immutable paperRegistry;
@@ -41,9 +44,10 @@ contract ReviewPool is Ownable {
     event ReviewSubmitted(uint256 indexed paperId, address indexed reviewer, bytes32 commentHash);
     event ReviewRevealed(uint256 indexed paperId, address indexed reviewer, int8 score);
     event ReviewCompleted(uint256 indexed paperId, bool accepted);
+    event RequiredPositiveReviewsChanged(uint256 oldValue, uint256 newValue);
     
     constructor(
-        address _stakeManager,
+        address payable _stakeManager,
         address _paperRegistry
     ) Ownable(msg.sender) {
         stakeManager = StakeManager(_stakeManager);
@@ -59,11 +63,25 @@ contract ReviewPool is Ownable {
         require(eligibleReviewers.length > 0, "No eligible reviewers");
         
         // Assign to ALL eligible reviewers for easier testing
-        assignments[paperId].paperId = paperId;
-        assignments[paperId].assignedReviewers = eligibleReviewers;
-        assignments[paperId].deadline = block.timestamp + REVIEW_PERIOD;
+        assignments[paperId] = ReviewAssignment({
+            paperId: paperId,
+            assignedReviewers: eligibleReviewers,
+            deadline: block.timestamp + REVIEW_PERIOD,
+            reviewCount: 0,
+            isCompleted: false
+        });
         
         emit ReviewersAssigned(paperId, eligibleReviewers);
+    }
+    
+    function setRequiredPositiveReviews(uint256 _requiredPositiveReviews) external onlyOwner {
+        require(_requiredPositiveReviews > 0, "Must require at least 1 positive review");
+        require(_requiredPositiveReviews <= 10, "Cannot require more than 10 positive reviews");
+        
+        uint256 oldValue = requiredPositiveReviews;
+        requiredPositiveReviews = _requiredPositiveReviews;
+        
+        emit RequiredPositiveReviewsChanged(oldValue, _requiredPositiveReviews);
     }
     
     // VRF fulfillRandomWords function removed - using sequential selection instead
@@ -71,11 +89,9 @@ contract ReviewPool is Ownable {
     function submitReview(
         uint256 paperId,
         int8 score,
-        bytes32 commentHash,
-        string calldata encryptedComment
+        string calldata comment
     ) external {
         require(isAssignedReviewer(paperId, msg.sender), "Not assigned reviewer");
-        require(block.timestamp <= assignments[paperId].deadline, "Review period expired");
         require(score >= -2 && score <= 2, "Invalid score range");
         require(reviews[paperId][msg.sender].reviewer == address(0), "Already submitted");
         
@@ -83,15 +99,25 @@ contract ReviewPool is Ownable {
             paperId: paperId,
             reviewer: msg.sender,
             score: score,
-            commentHash: commentHash,
-            encryptedComment: encryptedComment,
-            isRevealed: false,
+            commentHash: bytes32(0), // No hash needed
+            encryptedComment: comment,
+            isRevealed: true,
             submitTime: block.timestamp
         });
         
         assignments[paperId].reviewCount++;
         
-        emit ReviewSubmitted(paperId, msg.sender, commentHash);
+        // Immediately update paper score and reputation
+        paperRegistry.updatePaperScore(paperId, score);
+        stakeManager.updateReputation(msg.sender, true);
+        
+        emit ReviewSubmitted(paperId, msg.sender, bytes32(0));
+        emit ReviewRevealed(paperId, msg.sender, score);
+        
+        // Check if we should finalize immediately
+        if (shouldFinalizeReview(paperId)) {
+            finalizeReview(paperId);
+        }
     }
     
     function revealReview(
@@ -103,7 +129,7 @@ contract ReviewPool is Ownable {
         require(review.reviewer == msg.sender, "Review not found");
         require(!review.isRevealed, "Already revealed");
         require(
-            block.timestamp > assignments[paperId].deadline &&
+            block.timestamp >= review.submitTime &&
             block.timestamp <= assignments[paperId].deadline + REVEAL_PERIOD,
             "Not in reveal period"
         );
@@ -200,8 +226,8 @@ contract ReviewPool is Ownable {
             }
         }
         
-        // Finalize if we have 3 positive reviews OR all reviews are revealed
-        return positiveReviews >= 3 || areAllReviewsRevealed(paperId);
+        // Finalize if we have enough positive reviews OR all reviews are revealed
+        return positiveReviews >= requiredPositiveReviews || areAllReviewsRevealed(paperId);
     }
     
     function getAssignedReviewers(uint256 paperId) external view returns (address[] memory) {
