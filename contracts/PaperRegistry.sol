@@ -4,6 +4,10 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
+interface IReviewPool {
+    function assignReviewers(uint256 paperId) external;
+}
+
 contract PaperRegistry is ERC721, Ownable {
     struct Paper {
         string cid;
@@ -21,6 +25,7 @@ contract PaperRegistry is ERC721, Ownable {
 
     uint256 public nextPaperId;
     uint256 public publicationFee = 0.01 ether;
+    IReviewPool public reviewPool;
     
     mapping(uint256 => Paper) public papers;
     mapping(address => uint256[]) public authorPapers;
@@ -30,7 +35,11 @@ contract PaperRegistry is ERC721, Ownable {
     event PaperPublished(uint256 indexed paperId, address indexed author);
     event PaperRejected(uint256 indexed paperId, address indexed author);
     
-    constructor() ERC721("Peer-Review DOI", "DOI") Ownable() {}
+    constructor() ERC721("Peer-Review DOI", "DOI") Ownable(msg.sender) {}
+    
+    function setReviewPool(address _reviewPool) external onlyOwner {
+        reviewPool = IReviewPool(_reviewPool);
+    }
     
     function submitPaper(
         string calldata cid,
@@ -63,6 +72,12 @@ contract PaperRegistry is ERC721, Ownable {
         cidExists[cid] = true;
         
         emit PaperSubmitted(paperId, msg.sender, cid);
+        
+        // Automatically assign reviewers if ReviewPool is set
+        if (address(reviewPool) != address(0)) {
+            reviewPool.assignReviewers(paperId);
+        }
+        
         return paperId;
     }
     

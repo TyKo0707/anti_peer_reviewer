@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract StakeManager is ERC20, Ownable, ReentrancyGuard {
     struct Reviewer {
@@ -28,7 +28,7 @@ contract StakeManager is ERC20, Ownable, ReentrancyGuard {
     event ReviewerSlashed(address indexed reviewer, uint256 amount, uint256 percentage);
     event ReputationUpdated(address indexed reviewer, uint256 oldReputation, uint256 newReputation);
     
-    constructor() ERC20("Peer-Review Token", "PROOF") Ownable() {
+    constructor() ERC20("GO Token", "GO") Ownable(msg.sender) {
         // Mint initial supply for testing
         _mint(msg.sender, 1000000 ether);
     }
@@ -181,5 +181,14 @@ contract StakeManager is ERC20, Ownable, ReentrancyGuard {
     
     function distributeTokens(address to, uint256 amount) external onlyOwner {
         _mint(to, amount);
+    }
+    
+    // Faucet function - anyone can claim 2000 GO tokens once
+    mapping(address => bool) public hasClaimedFaucet;
+    
+    function claimFaucetTokens() external {
+        require(!hasClaimedFaucet[msg.sender], "Already claimed faucet tokens");
+        hasClaimedFaucet[msg.sender] = true;
+        _mint(msg.sender, 2000 ether); // Give 2000 GO tokens
     }
 }

@@ -1,22 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./StakeManager.sol";
 import "./PaperRegistry.sol";
 
-interface IVRFCoordinatorV2 {
-    function requestRandomWords(
-        bytes32 keyHash,
-        uint64 subId,
-        uint16 minimumRequestConfirmations,
-        uint32 callbackGasLimit,
-        uint32 numWords
-    ) external returns (uint256 requestId);
-}
-
-contract ReviewPool is VRFConsumerBaseV2, Ownable {
+contract ReviewPool is Ownable {
     struct Review {
         uint256 paperId;
         address reviewer;
@@ -41,14 +30,12 @@ contract ReviewPool is VRFConsumerBaseV2, Ownable {
     
     StakeManager public immutable stakeManager;
     PaperRegistry public immutable paperRegistry;
-    IVRFCoordinatorV2 public immutable vrfCoordinator;
     
-    bytes32 public immutable keyHash;
-    uint64 public immutable subscriptionId;
+    // Simple counter for sequential reviewer selection
+    uint256 private reviewerSelectionIndex;
     
     mapping(uint256 => ReviewAssignment) public assignments;
     mapping(uint256 => mapping(address => Review)) public reviews;
-    mapping(uint256 => uint256) public vrfRequestToPaperId;
     
     event ReviewersAssigned(uint256 indexed paperId, address[] reviewers);
     event ReviewSubmitted(uint256 indexed paperId, address indexed reviewer, bytes32 commentHash);
@@ -56,62 +43,30 @@ contract ReviewPool is VRFConsumerBaseV2, Ownable {
     event ReviewCompleted(uint256 indexed paperId, bool accepted);
     
     constructor(
-        address _vrfCoordinator,
-        bytes32 _keyHash,
-        uint64 _subscriptionId,
         address _stakeManager,
         address _paperRegistry
-    ) VRFConsumerBaseV2(_vrfCoordinator) Ownable() {
-        vrfCoordinator = IVRFCoordinatorV2(_vrfCoordinator);
-        keyHash = _keyHash;
-        subscriptionId = _subscriptionId;
+    ) Ownable(msg.sender) {
         stakeManager = StakeManager(_stakeManager);
         paperRegistry = PaperRegistry(_paperRegistry);
+        reviewerSelectionIndex = 0;
     }
     
-    function assignReviewers(uint256 paperId) external onlyOwner {
+    function assignReviewers(uint256 paperId) external {
+        require(msg.sender == owner() || msg.sender == address(paperRegistry), "Not authorized");
         require(assignments[paperId].paperId == 0, "Already assigned");
         
-        // Request random words from Chainlink VRF
-        uint256 requestId = vrfCoordinator.requestRandomWords(
-            keyHash,
-            subscriptionId,
-            3, // minimum confirmations
-            300000, // callback gas limit
-            1 // number of random words
-        );
+        address[] memory eligibleReviewers = stakeManager.getEligibleReviewers();
+        require(eligibleReviewers.length > 0, "No eligible reviewers");
         
-        vrfRequestToPaperId[requestId] = paperId;
-        
+        // Assign to ALL eligible reviewers for easier testing
         assignments[paperId].paperId = paperId;
+        assignments[paperId].assignedReviewers = eligibleReviewers;
         assignments[paperId].deadline = block.timestamp + REVIEW_PERIOD;
+        
+        emit ReviewersAssigned(paperId, eligibleReviewers);
     }
     
-    function fulfillRandomWords(uint256 requestId, uint256[] memory randomWords) internal override {
-        uint256 paperId = vrfRequestToPaperId[requestId];
-        require(paperId != 0, "Invalid request");
-        
-        address[] memory eligibleReviewers = stakeManager.getEligibleReviewers();
-        require(eligibleReviewers.length >= REVIEWERS_PER_PAPER, "Not enough eligible reviewers");
-        
-        address[] memory selectedReviewers = new address[](REVIEWERS_PER_PAPER);
-        uint256 randomSeed = randomWords[0];
-        
-        for (uint256 i = 0; i < REVIEWERS_PER_PAPER; i++) {
-            uint256 index = uint256(keccak256(abi.encode(randomSeed, i))) % eligibleReviewers.length;
-            selectedReviewers[i] = eligibleReviewers[index];
-            
-            // Remove selected reviewer from pool to avoid duplicates
-            eligibleReviewers[index] = eligibleReviewers[eligibleReviewers.length - 1];
-            assembly {
-                mstore(eligibleReviewers, sub(mload(eligibleReviewers), 1))
-            }
-        }
-        
-        assignments[paperId].assignedReviewers = selectedReviewers;
-        
-        emit ReviewersAssigned(paperId, selectedReviewers);
-    }
+    // VRF fulfillRandomWords function removed - using sequential selection instead
     
     function submitReview(
         uint256 paperId,
@@ -166,8 +121,8 @@ contract ReviewPool is VRFConsumerBaseV2, Ownable {
         
         emit ReviewRevealed(paperId, msg.sender, score);
         
-        // Check if all reviews are revealed
-        if (areAllReviewsRevealed(paperId)) {
+        // Check if we have enough reviews to finalize (3 positive reviews or all reviews revealed)
+        if (shouldFinalizeReview(paperId)) {
             finalizeReview(paperId);
         }
     }
@@ -227,6 +182,26 @@ contract ReviewPool is VRFConsumerBaseV2, Ownable {
             }
         }
         return true;
+    }
+    
+    function shouldFinalizeReview(uint256 paperId) public view returns (bool) {
+        // Count positive reviews (score >= 1)
+        address[] memory assignedReviewers = assignments[paperId].assignedReviewers;
+        uint256 positiveReviews = 0;
+        uint256 revealedReviews = 0;
+        
+        for (uint256 i = 0; i < assignedReviewers.length; i++) {
+            Review memory review = reviews[paperId][assignedReviewers[i]];
+            if (review.reviewer != address(0) && review.isRevealed) {
+                revealedReviews++;
+                if (review.score >= 1) {
+                    positiveReviews++;
+                }
+            }
+        }
+        
+        // Finalize if we have 3 positive reviews OR all reviews are revealed
+        return positiveReviews >= 3 || areAllReviewsRevealed(paperId);
     }
     
     function getAssignedReviewers(uint256 paperId) external view returns (address[] memory) {
