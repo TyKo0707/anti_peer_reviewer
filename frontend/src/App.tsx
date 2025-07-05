@@ -8,11 +8,14 @@ import AuthorDashboard from './components/AuthorDashboard';
 import ReviewerDashboard from './components/ReviewerDashboard';
 import Home from './components/Home';
 import { Web3Provider } from './contexts/Web3Context';
+import { useProviderReset } from "./hooks/useProviderReset";
 
 function App() {
   const [account, setAccount] = useState<string | null>(null);
   const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
   const [signer, setSigner] = useState<ethers.JsonRpcSigner | null>(null);
+
+  useProviderReset(provider);
 
   const connectWallet = async () => {
     if (typeof window.ethereum !== 'undefined') {
