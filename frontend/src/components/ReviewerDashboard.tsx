@@ -37,6 +37,7 @@ const ReviewerDashboard: React.FC = () => {
   const [assignedPapers, setAssignedPapers] = useState<AssignedPaper[]>([]);
   const [tokenBalance, setTokenBalance] = useState<string>('0');
   const [minStake, setMinStake] = useState<string>('0');
+  const [hasClaimedFaucet, setHasClaimedFaucet] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -55,6 +56,7 @@ const ReviewerDashboard: React.FC = () => {
       loadTokenBalance();
       loadMinStake();
       loadAssignedPapers();
+      checkFaucetStatus();
     }
   }, [account, provider]);
 
@@ -102,17 +104,123 @@ const ReviewerDashboard: React.FC = () => {
     }
   };
 
+  const checkFaucetStatus = async () => {
+    if (!account || !provider) return;
+    
+    try {
+      const contract = new ethers.Contract(CONTRACT_ADDRESSES.STAKE_MANAGER, STAKE_MANAGER_ABI, provider);
+      const claimed = await contract.hasClaimedFaucet(account);
+      setHasClaimedFaucet(claimed);
+    } catch (err) {
+      console.error('Error checking faucet status:', err);
+    }
+  };
+
+  const handleClaimFaucet = async () => {
+    if (!signer) return;
+    
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+    
+    try {
+      const contract = new ethers.Contract(CONTRACT_ADDRESSES.STAKE_MANAGER, STAKE_MANAGER_ABI, signer);
+      const tx = await contract.claimFaucetTokens();
+      await tx.wait();
+      
+      setSuccess('Successfully claimed 2000 GO tokens!');
+      await loadTokenBalance();
+      await checkFaucetStatus();
+    } catch (err: any) {
+      setError(err.message || 'Failed to claim tokens');
+      console.error('Error claiming faucet:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const loadAssignedPapers = async () => {
     if (!account || !provider) return;
     
     setLoading(true);
+    console.log('🔍 Loading assigned papers for reviewer:', account);
+    console.log('🔍 Using contracts:', CONTRACT_ADDRESSES);
+    
     try {
-      // This is a simplified implementation - in practice, you'd need to track assignments
-      // For now, we'll just show an empty list
-      setAssignedPapers([]);
+      const reviewPoolContract = new ethers.Contract(CONTRACT_ADDRESSES.REVIEW_POOL, REVIEW_POOL_ABI, provider);
+      const paperRegistryContract = new ethers.Contract(CONTRACT_ADDRESSES.PAPER_REGISTRY, PAPER_REGISTRY_ABI, provider);
+      
+      const assignedPapers: AssignedPaper[] = [];
+      
+      // Get total number of papers submitted
+      // We'll check each paper to see if this reviewer is assigned
+      try {
+        console.log('🔍 Checking papers 0-99...');
+        // Start from paper ID 0 and check up to some reasonable limit
+        for (let paperId = 0; paperId < 100; paperId++) {
+          try {
+            // Check if this reviewer is assigned to this paper
+            const isAssigned = await reviewPoolContract.isAssignedReviewer(paperId, account);
+            
+            if (isAssigned) {
+              console.log(`✅ Found assignment: Paper ${paperId} -> Reviewer ${account}`);
+              
+              // Get paper details
+              const paper = await paperRegistryContract.getPaper(paperId);
+              console.log(`📄 Paper ${paperId} details:`, {
+                cid: paper.cid,
+                author: paper.author,
+                submissionTime: new Date(Number(paper.submissionTime) * 1000).toISOString()
+              });
+              
+              // Check if review has been submitted
+              let hasSubmitted = false;
+              let hasRevealed = false;
+              let review = undefined;
+              
+              try {
+                review = await reviewPoolContract.getReview(paperId, account);
+                hasSubmitted = review.reviewer !== '0x0000000000000000000000000000000000000000';
+                hasRevealed = review.isRevealed;
+              } catch (e) {
+                // Review doesn't exist yet
+                hasSubmitted = false;
+                hasRevealed = false;
+              }
+              
+              // Use current time + 7 days as deadline (since we can't access assignments struct)
+              const deadline = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60);
+              
+              assignedPapers.push({
+                id: paperId,
+                cid: paper.cid,
+                author: paper.author,
+                deadline: deadline,
+                hasSubmitted,
+                hasRevealed,
+                review
+              });
+            }
+          } catch (e) {
+            // Paper doesn't exist, break the loop
+            if (e instanceof Error && e.message.includes('Paper does not exist')) {
+              console.log(`🔍 Paper ${paperId} doesn't exist, stopping search`);
+              break;
+            }
+            // Continue with next paper if there's another error
+            console.log(`⚠️ Error checking paper ${paperId}:`, e instanceof Error ? e.message : String(e));
+            continue;
+          }
+        }
+      } catch (e) {
+        console.error('❌ Error checking assigned papers:', e);
+      }
+      
+      console.log(`📊 Final result: Found ${assignedPapers.length} assigned papers`);
+      setAssignedPapers(assignedPapers);
     } catch (err) {
       setError('Failed to load assigned papers');
-      console.error('Error loading assigned papers:', err);
+      console.error('❌ Error loading assigned papers:', err);
     } finally {
       setLoading(false);
     }
@@ -250,13 +358,13 @@ const ReviewerDashboard: React.FC = () => {
         
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem' }}>
           <div>
-            <p><strong>Token Balance:</strong> {tokenBalance} PROOF</p>
-            <p><strong>Min Stake Required:</strong> {minStake} PROOF</p>
+            <p><strong>Token Balance:</strong> {tokenBalance} GO</p>
+            <p><strong>Min Stake Required:</strong> {minStake} GO</p>
           </div>
           
           {reviewer && (
             <div>
-              <p><strong>Staked:</strong> {reviewer.stake} PROOF</p>
+              <p><strong>Staked:</strong> {reviewer.stake} GO</p>
               <p><strong>Reputation:</strong> {reviewer.reputation}/100</p>
               <p><strong>Status:</strong> {reviewer.isActive ? 'Active' : 'Inactive'}</p>
               <p><strong>Reviews Completed:</strong> {reviewer.reviewCount}</p>
@@ -266,6 +374,24 @@ const ReviewerDashboard: React.FC = () => {
         </div>
         
         <div style={{ marginTop: '1rem' }}>
+          {/* Faucet button */}
+          {parseFloat(tokenBalance) < parseFloat(minStake) && !hasClaimedFaucet && (
+            <button 
+              className="button" 
+              onClick={handleClaimFaucet}
+              disabled={loading}
+              style={{ marginRight: '1rem', marginBottom: '1rem' }}
+            >
+              {loading ? 'Claiming...' : 'Claim 2000 GO Tokens'}
+            </button>
+          )}
+          
+          {hasClaimedFaucet && parseFloat(tokenBalance) < parseFloat(minStake) && (
+            <p style={{ color: '#718096', marginBottom: '1rem' }}>
+              Faucet already claimed. You need more GO tokens to stake.
+            </p>
+          )}
+          
           {!reviewer || !reviewer.isActive ? (
             <button 
               className="button" 
@@ -287,13 +413,22 @@ const ReviewerDashboard: React.FC = () => {
         
         {parseFloat(tokenBalance) < parseFloat(minStake) && (
           <p style={{ color: '#c53030', marginTop: '1rem' }}>
-            You need at least {minStake} PROOF tokens to stake as a reviewer.
+            You need at least {minStake} GO tokens to stake as a reviewer.
           </p>
         )}
       </div>
       
       <div className="card">
-        <h2>Assigned Papers</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h2>Assigned Papers</h2>
+          <button 
+            className="button secondary" 
+            onClick={loadAssignedPapers}
+            disabled={loading}
+          >
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
         
         {loading && <div className="loading">Loading assigned papers...</div>}
         

@@ -122,7 +122,17 @@ const AuthorDashboard: React.FC = () => {
         { value: fee }
       );
       
-      await tx.wait();
+      console.log('Transaction sent:', tx.hash);
+      
+      // Wait for transaction with timeout
+      const receipt = await Promise.race([
+        tx.wait(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Transaction timeout')), 30000)
+        )
+      ]);
+      
+      console.log('Transaction confirmed:', receipt);
       setSuccess('Paper submitted successfully!');
       setFormData({
         cid: '',
