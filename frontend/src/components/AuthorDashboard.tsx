@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { useWeb3, CONTRACT_ADDRESSES, PAPER_REGISTRY_ABI, REVIEW_POOL_ABI } from '../contexts/Web3Context';
 import ReviewsDisplay from './ReviewsDisplay';
 
@@ -109,27 +109,36 @@ const AuthorDashboard: React.FC = () => {
   };
 
   const uploadToS3 = async (file: File): Promise<string> => {
-    const s3 = new S3Client({
-      region: process.env.REACT_APP_AWS_REGION!,
-      credentials: {
-        accessKeyId: process.env.REACT_APP_AWS_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.REACT_APP_AWS_SECRET_ACCESS_KEY!,
+    const fileName = encodeURIComponent(file.name);
+    const fileType = encodeURIComponent(file.type);
+
+    // Step 1: Get presigned URL and S3 key
+    const response = await fetch(`http://localhost:8000/sign-s3?file_name=${fileName}&file_type=${fileType}`);
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to get signed URL: ${error}`);
+    }
+
+    const { url, key } = await response.json();
+
+    // Step 2: Upload to S3
+    const upload = await fetch(url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": file.type,
       },
+      body: file,
     });
 
-    const key = `papers/${Date.now()}_${file.name}`;
+    if (!upload.ok) {
+      const error = await upload.text();
+      throw new Error(`Upload to S3 failed: ${upload.status} – ${error}`);
+    }
 
-    const command = new PutObjectCommand({
-      Bucket: process.env.REACT_APP_S3_BUCKET!,
-      Key: key,
-      Body: file,
-      ContentType: 'application/pdf',
-      ACL: 'public-read',
-    });
-
-    await s3.send(command);
-
-    return `https://${process.env.REACT_APP_S3_BUCKET!}.s3.${process.env.REACT_APP_AWS_REGION!}.amazonaws.com/${key}`;
+    // Step 3: Return the public S3 URL
+    const bucket = process.env.REACT_APP_S3_BUCKET!;
+    const region = process.env.REACT_APP_AWS_REGION!;
+    return `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
   };
 
   const validatePDF = async (file: File): Promise<{ valid: boolean; reason?: string }> => {
@@ -154,7 +163,7 @@ const AuthorDashboard: React.FC = () => {
 
   const handleSubmitPaper = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!signer || !formData.cid.trim() || !pdfFile) return;
+    if (!signer || !pdfFile) return;
 
     setLoading(true);
     setError(null);
@@ -168,9 +177,11 @@ const AuthorDashboard: React.FC = () => {
         return;
       }
 
-      // Upload to S3
+      // ✅ Upload after validation
       const uploadedUrl = await uploadToS3(pdfFile);
-      setFormData(prev => ({ ...prev, cid: uploadedUrl }));
+
+      // ✅ Use S3 link as CID
+      const cid = uploadedUrl;
 
       const contract = new ethers.Contract(CONTRACT_ADDRESSES.PAPER_REGISTRY, PAPER_REGISTRY_ABI, signer);
       const keywords = formData.keywords.split(',').map(k => k.trim()).filter(k => k);
@@ -179,7 +190,7 @@ const AuthorDashboard: React.FC = () => {
 
       const fee = await contract.publicationFee();
       const tx = await contract.submitPaper(
-        formData.cid,
+        cid,
         keywords,
         formData.fieldClassification,
         formData.isEmbargoed,
@@ -189,7 +200,6 @@ const AuthorDashboard: React.FC = () => {
 
       console.log('Transaction sent:', tx.hash);
 
-      // Wait for transaction with timeout
       const receipt = await Promise.race([
         tx.wait(),
         new Promise((_, reject) =>
@@ -199,15 +209,17 @@ const AuthorDashboard: React.FC = () => {
 
       console.log('Transaction confirmed:', receipt);
       setSuccess('Paper submitted successfully!');
+
       setFormData({
-        cid: '',
+        cid: cid,
         keywords: '',
         fieldClassification: '',
         isEmbargoed: false,
         embargoEndTime: ''
       });
 
-      // Reload papers
+      setPdfFile(null);
+      setPdfValidationResult(null);
       await loadUserPapers();
     } catch (err: any) {
       setError(err.message || 'Failed to submit paper');
@@ -253,9 +265,15 @@ const AuthorDashboard: React.FC = () => {
                 setPdfFile(file);
                 try {
                   const result = await validatePDF(file);
-                  setPdfValidationResult(result);  // You need to add this state: const [pdfValidationResult, setPdfValidationResult] = useState(null);
+                  setPdfValidationResult(result);
+                  if (result.valid) {
+                    const s3Url = await uploadToS3(file);
+                    console.log("✅ S3 URL:", s3Url);
+                    setFormData(prev => ({ ...prev, cid: s3Url }));
+                  }
                 } catch (err) {
                   setPdfValidationResult({ valid: false, reason: 'Validation server error' });
+                  console.error("❌ Validation/upload error:", err);
                 }
               } else {
                 setPdfValidationResult(null);
@@ -275,15 +293,14 @@ const AuthorDashboard: React.FC = () => {
 
         <form onSubmit={handleSubmitPaper}>
           <div className="form-group">
-            <label htmlFor="cid">Paper CID (IPFS/AWS S3 link) </label>
+            <label htmlFor="cid">AWS S3 Link (Auto-filled after upload)</label>
             <input
               type="text"
               id="cid"
               name="cid"
               value={formData.cid}
-              onChange={handleInputChange}
-              placeholder="QmXXXXXXX... or https://..."
-              required
+              readOnly
+              placeholder="Uploaded URL will appear here"
             />
           </div>
 
@@ -347,7 +364,11 @@ const AuthorDashboard: React.FC = () => {
             <p><strong>Publication Fee:</strong> {publicationFee} ETH</p>
           </div>
 
-          <button type="submit" className="button" disabled={loading || !formData.cid.trim()}>
+          <button
+            type="submit"
+            className="button"
+            disabled={loading || !pdfValidationResult?.valid || !pdfFile}
+          >
             {loading ? 'Submitting...' : 'Submit Paper'}
           </button>
         </form>
