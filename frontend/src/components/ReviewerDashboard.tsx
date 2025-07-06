@@ -475,11 +475,11 @@ const ReviewerDashboard: React.FC = () => {
         {assignedPapers.map(paper => (
           <div key={paper.id} className="paper-card">
             <h3>Paper #{paper.id}</h3>
-            <p><strong>CID:</strong> {paper.cid}</p>
+            <p><strong>PDF:</strong> <a href={paper.cid} target="_blank" rel="noreferrer">Download</a></p>
             <p><strong>Author:</strong> {paper.author}</p>
             <p><strong>Deadline:</strong> {new Date(paper.deadline * 1000).toLocaleDateString()}</p>
-            <p><strong>Status:</strong> 
-              {paper.hasRevealed ? 'Revealed' : 
+            <p><strong>Status:</strong>
+              {paper.hasRevealed ? 'Revealed' :
                paper.hasSubmitted ? 'Submitted (Pending Reveal)' : 'Pending Review'}
             </p>
             

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { useWeb3, CONTRACT_ADDRESSES, PAPER_REGISTRY_ABI, REVIEW_POOL_ABI } from '../contexts/Web3Context';
 import ReviewsDisplay from './ReviewsDisplay';
 
@@ -26,7 +27,9 @@ const AuthorDashboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [publicationFee, setPublicationFee] = useState<string>('0');
-  
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfValidationResult, setPdfValidationResult] = useState<{ valid: boolean, reason?: string } | null>(null);
+
   // Form state
   const [formData, setFormData] = useState({
     cid: '',
@@ -45,7 +48,7 @@ const AuthorDashboard: React.FC = () => {
 
   const loadPublicationFee = async () => {
     if (!provider) return;
-    
+
     try {
       const contract = new ethers.Contract(CONTRACT_ADDRESSES.PAPER_REGISTRY, PAPER_REGISTRY_ABI, provider);
       const fee = await contract.publicationFee();
@@ -57,17 +60,17 @@ const AuthorDashboard: React.FC = () => {
 
   const loadUserPapers = async () => {
     if (!account || !provider) return;
-    
+
     setLoading(true);
     try {
       const contract = new ethers.Contract(CONTRACT_ADDRESSES.PAPER_REGISTRY, PAPER_REGISTRY_ABI, provider);
       const reviewPoolContract = new ethers.Contract(CONTRACT_ADDRESSES.REVIEW_POOL, REVIEW_POOL_ABI, provider);
       const paperIds = await contract.getAuthorPapers(account);
-      
+
       const papersData = await Promise.all(
         paperIds.map(async (id: bigint) => {
           const paper = await contract.getPaper(id);
-          
+
           // Check if paper is finalized
           let isFinalized = false;
           try {
@@ -77,7 +80,7 @@ const AuthorDashboard: React.FC = () => {
             // If error, assume not finalized
             isFinalized = false;
           }
-          
+
           return {
             id: Number(id),
             cid: paper.cid,
@@ -95,7 +98,7 @@ const AuthorDashboard: React.FC = () => {
           };
         })
       );
-      
+
       setPapers(papersData);
     } catch (err) {
       setError('Failed to load papers');
@@ -103,6 +106,51 @@ const AuthorDashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const uploadToS3 = async (file: File): Promise<string> => {
+    const fileName = encodeURIComponent(file.name);
+    const fileType = encodeURIComponent(file.type);
+
+    // Step 1: Get presigned URL and S3 key
+    const response = await fetch(`http://localhost:8000/sign-s3?file_name=${fileName}&file_type=${fileType}`);
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to get signed URL: ${error}`);
+    }
+
+    const { url, key } = await response.json();
+
+    // Step 2: Upload to S3
+    const upload = await fetch(url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": file.type,
+      },
+      body: file,
+    });
+
+    if (!upload.ok) {
+      const error = await upload.text();
+      throw new Error(`Upload to S3 failed: ${upload.status} – ${error}`);
+    }
+
+    // Step 3: Return the public S3 URL
+    const bucket = process.env.REACT_APP_S3_BUCKET!;
+    const region = process.env.REACT_APP_AWS_REGION!;
+    return `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+  };
+
+  const validatePDF = async (file: File): Promise<{ valid: boolean; reason?: string }> => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch("http://localhost:8000/validate", {
+      method: "POST",
+      body: formData,
+    });
+
+    return await response.json();
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -115,49 +163,63 @@ const AuthorDashboard: React.FC = () => {
 
   const handleSubmitPaper = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!signer || !formData.cid.trim()) return;
-    
+    if (!signer || !pdfFile) return;
+
     setLoading(true);
     setError(null);
     setSuccess(null);
-    
+
     try {
+      const validation = await validatePDF(pdfFile);
+      if (!validation.valid) {
+        setError(`Validation failed: ${validation.reason || 'Unknown issue'}`);
+        setLoading(false);
+        return;
+      }
+
+      // ✅ Upload after validation
+      const uploadedUrl = await uploadToS3(pdfFile);
+
+      // ✅ Use S3 link as CID
+      const cid = uploadedUrl;
+
       const contract = new ethers.Contract(CONTRACT_ADDRESSES.PAPER_REGISTRY, PAPER_REGISTRY_ABI, signer);
       const keywords = formData.keywords.split(',').map(k => k.trim()).filter(k => k);
-      const embargoEndTime = formData.isEmbargoed && formData.embargoEndTime ? 
+      const embargoEndTime = formData.isEmbargoed && formData.embargoEndTime ?
         Math.floor(new Date(formData.embargoEndTime).getTime() / 1000) : 0;
-      
+
       const fee = await contract.publicationFee();
       const tx = await contract.submitPaper(
-        formData.cid,
+        cid,
         keywords,
         formData.fieldClassification,
         formData.isEmbargoed,
         embargoEndTime,
         { value: fee }
       );
-      
+
       console.log('Transaction sent:', tx.hash);
-      
-      // Wait for transaction with timeout
+
       const receipt = await Promise.race([
         tx.wait(),
-        new Promise((_, reject) => 
+        new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Transaction timeout')), 30000)
         )
       ]);
-      
+
       console.log('Transaction confirmed:', receipt);
       setSuccess('Paper submitted successfully!');
+
       setFormData({
-        cid: '',
+        cid: cid,
         keywords: '',
         fieldClassification: '',
         isEmbargoed: false,
         embargoEndTime: ''
       });
-      
-      // Reload papers
+
+      setPdfFile(null);
+      setPdfValidationResult(null);
       await loadUserPapers();
     } catch (err: any) {
       setError(err.message || 'Failed to submit paper');
@@ -187,24 +249,61 @@ const AuthorDashboard: React.FC = () => {
     <div>
       <div className="card">
         <h2>Submit New Paper</h2>
-        
+
         {error && <div className="error">{error}</div>}
         {success && <div className="success">{success}</div>}
-        
+
+        <div className="form-group">
+          <label htmlFor="pdfFile">Upload PDF *</label>
+          <input
+            type="file"
+            id="pdfFile"
+            accept="application/pdf"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (file && file.type === "application/pdf") {
+                setPdfFile(file);
+                try {
+                  const result = await validatePDF(file);
+                  setPdfValidationResult(result);
+                  if (result.valid) {
+                    const s3Url = await uploadToS3(file);
+                    console.log("✅ S3 URL:", s3Url);
+                    setFormData(prev => ({ ...prev, cid: s3Url }));
+                  }
+                } catch (err) {
+                  setPdfValidationResult({ valid: false, reason: 'Validation server error' });
+                  console.error("❌ Validation/upload error:", err);
+                }
+              } else {
+                setPdfValidationResult(null);
+              }
+            }}
+          />
+          {pdfValidationResult && (
+            <div style={{ marginTop: '0.5rem' }}>
+              {pdfValidationResult.valid ? (
+                <span style={{ color: 'green' }}>✅ PDF format looks valid.</span>
+              ) : (
+                <span style={{ color: 'red' }}>❌ Invalid format: {pdfValidationResult.reason}</span>
+              )}
+            </div>
+          )}
+        </div>
+
         <form onSubmit={handleSubmitPaper}>
           <div className="form-group">
-            <label htmlFor="cid">Paper CID (IPFS/AWS S3 link) *</label>
+            <label htmlFor="cid">AWS S3 Link (Auto-filled after upload)</label>
             <input
               type="text"
               id="cid"
               name="cid"
               value={formData.cid}
-              onChange={handleInputChange}
-              placeholder="QmXXXXXXX... or https://..."
-              required
+              readOnly
+              placeholder="Uploaded URL will appear here"
             />
           </div>
-          
+
           <div className="form-group">
             <label htmlFor="keywords">Keywords (comma-separated)</label>
             <input
@@ -216,7 +315,7 @@ const AuthorDashboard: React.FC = () => {
               placeholder="blockchain, peer review, decentralization"
             />
           </div>
-          
+
           <div className="form-group">
             <label htmlFor="fieldClassification">Field Classification</label>
             <select
@@ -235,7 +334,7 @@ const AuthorDashboard: React.FC = () => {
               <option value="Other">Other</option>
             </select>
           </div>
-          
+
           <div className="form-group">
             <label>
               <input
@@ -247,7 +346,7 @@ const AuthorDashboard: React.FC = () => {
               Embargo paper (keep private until specified date)
             </label>
           </div>
-          
+
           {formData.isEmbargoed && (
             <div className="form-group">
               <label htmlFor="embargoEndTime">Embargo End Date</label>
@@ -260,33 +359,37 @@ const AuthorDashboard: React.FC = () => {
               />
             </div>
           )}
-          
+
           <div className="form-group">
             <p><strong>Publication Fee:</strong> {publicationFee} ETH</p>
           </div>
-          
-          <button type="submit" className="button" disabled={loading || !formData.cid.trim()}>
+
+          <button
+            type="submit"
+            className="button"
+            disabled={loading || !pdfValidationResult?.valid || !pdfFile}
+          >
             {loading ? 'Submitting...' : 'Submit Paper'}
           </button>
         </form>
       </div>
-      
+
       <div className="card">
         <h2>My Papers</h2>
-        
+
         {loading && <div className="loading">Loading papers...</div>}
-        
+
         {papers.length === 0 && !loading && (
           <p>You haven't submitted any papers yet.</p>
         )}
-        
+
         {papers.map(paper => (
           <div key={paper.id} className="paper-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <h3>Paper #{paper.id}</h3>
                 <div className="paper-meta">
-                  <p><strong>CID:</strong> {paper.cid}</p>
+                  <p><strong>PDF:</strong> <a href={paper.cid} target="_blank" rel="noreferrer">Download</a></p>
                   <p><strong>Field:</strong> {paper.fieldClassification}</p>
                   <p><strong>Keywords:</strong> {paper.keywords.join(', ')}</p>
                   <p><strong>Submitted:</strong> {new Date(paper.submissionTime * 1000).toLocaleDateString()}</p>
@@ -299,7 +402,7 @@ const AuthorDashboard: React.FC = () => {
               </div>
               {getStatusBadge(paper)}
             </div>
-            
+
             {/* Show reviews for finalized papers */}
             {paper.isFinalized && (
               <ReviewsDisplay paperId={paper.id} />
