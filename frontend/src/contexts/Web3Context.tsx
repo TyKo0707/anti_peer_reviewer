@@ -25,9 +25,10 @@ export const useWeb3 = (): Web3ContextType => {
 
 // Contract addresses - these should be updated after deployment
 export const CONTRACT_ADDRESSES = {
-  PAPER_REGISTRY: '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
-  REVIEW_POOL: '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0',
-  STAKE_MANAGER: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+  PAPER_REGISTRY: '0x9A676e781A523b5d0C0e43731313A708CB607508',
+  REVIEW_POOL: '0x0B306BF915C4d645ff596e518fAf3F9669b97016',
+  STAKE_MANAGER: '0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82',
+  DISPUTE_MANAGER: '0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1',
 };
 
 // Contract ABIs (simplified for PoC)
@@ -60,8 +61,26 @@ export const STAKE_MANAGER_ABI = [
   'function getReviewer(address reviewer) external view returns (tuple(uint256 stake, uint256 reputation, bool isActive, uint256 lastActivityTime, uint256 reviewCount, uint256 successfulReviews))',
   'function balanceOf(address account) external view returns (uint256)',
   'function transfer(address to, uint256 amount) external returns (bool)',
+  'function transferFrom(address from, address to, uint256 amount) external returns (bool)',
+  'function approve(address spender, uint256 amount) external returns (bool)',
+  'function allowance(address owner, address spender) external view returns (uint256)',
   'function MIN_STAKE() external view returns (uint256)',
   'function claimFaucetTokens() external',
   'function hasClaimedFaucet(address account) external view returns (bool)',
   'event ReviewerStaked(address indexed reviewer, uint256 amount)'
+];
+
+export const DISPUTE_MANAGER_ABI = [
+  'function createDispute(uint256 paperId, address reviewer, string calldata reason) external',
+  'function voteOnDispute(uint256 disputeId, bool supportDispute) external',
+  'function resolveDispute(uint256 disputeId) external',
+  'function getDispute(uint256 disputeId) external view returns (uint256 paperId, address reviewerBeingDisputed, address disputer, string reason, uint256 disputeStake, uint256 createdTime, uint256 votingDeadline, uint8 status, uint256 votesFor, uint256 votesAgainst, address[] jurors)',
+  'function getActiveDisputes() external view returns (uint256[])',
+  'function getDisputeForReview(uint256 paperId, address reviewer) external view returns (uint256)',
+  'function isJurorForDispute(uint256 disputeId, address juror) external view returns (bool)',
+  'function hasVotedOnDispute(uint256 disputeId, address juror) external view returns (bool)',
+  'function DISPUTE_STAKE() external view returns (uint256)',
+  'event DisputeCreated(uint256 indexed disputeId, uint256 indexed paperId, address indexed reviewer, address disputer, string reason)',
+  'event DisputeVoted(uint256 indexed disputeId, address indexed juror, bool voteChoice)',
+  'event DisputeResolved(uint256 indexed disputeId, bool disputeWon, address disputer)'
 ];

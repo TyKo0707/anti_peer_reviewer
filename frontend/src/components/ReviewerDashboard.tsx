@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useWeb3, CONTRACT_ADDRESSES, STAKE_MANAGER_ABI, REVIEW_POOL_ABI, PAPER_REGISTRY_ABI } from '../contexts/Web3Context';
+import DisputesPanel from './DisputesPanel';
 
 interface Reviewer {
   stake: string;
@@ -549,6 +550,9 @@ const ReviewerDashboard: React.FC = () => {
           </form>
         </div>
       )}
+      
+      {/* Add disputes panel for reviewers */}
+      <DisputesPanel />
     </div>
   );
 };

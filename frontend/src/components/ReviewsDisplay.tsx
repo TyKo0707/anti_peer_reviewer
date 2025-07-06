@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useWeb3 } from '../contexts/Web3Context';
-import { CONTRACT_ADDRESSES, REVIEW_POOL_ABI } from '../contexts/Web3Context';
+import { CONTRACT_ADDRESSES, REVIEW_POOL_ABI, DISPUTE_MANAGER_ABI } from '../contexts/Web3Context';
+import DisputeForm from './DisputeForm';
 
 interface Review {
   reviewer: string;
@@ -16,11 +17,13 @@ interface ReviewsDisplayProps {
 }
 
 const ReviewsDisplay: React.FC<ReviewsDisplayProps> = ({ paperId, isVisible = true }) => {
-  const { provider } = useWeb3();
+  const { provider, account } = useWeb3();
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isFinalized, setIsFinalized] = useState(false);
+  const [disputes, setDisputes] = useState<{ [key: string]: number }>({});
+  const [showDisputeForm, setShowDisputeForm] = useState<{ paperId: number; reviewer: string } | null>(null);
 
   const loadReviews = async () => {
     if (!provider) return;
@@ -47,6 +50,11 @@ const ReviewsDisplay: React.FC<ReviewsDisplayProps> = ({ paperId, isVisible = tr
       }
       
       setReviews(reviewsData);
+      
+      // Load dispute information for each review
+      if (finalized) {
+        await loadDisputeData(reviewsData);
+      }
     } catch (err: any) {
       if (err.message.includes('Reviews not yet visible')) {
         setError('Reviews will be visible after the paper is finalized');
@@ -55,6 +63,30 @@ const ReviewsDisplay: React.FC<ReviewsDisplayProps> = ({ paperId, isVisible = tr
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadDisputeData = async (reviewsData: Review[]) => {
+    if (!provider) return;
+
+    try {
+      const disputeManager = new ethers.Contract(CONTRACT_ADDRESSES.DISPUTE_MANAGER, DISPUTE_MANAGER_ABI, provider);
+      const disputeData: { [key: string]: number } = {};
+
+      for (const review of reviewsData) {
+        try {
+          const disputeId = await disputeManager.getDisputeForReview(paperId, review.reviewer);
+          if (disputeId > 0) {
+            disputeData[review.reviewer] = Number(disputeId);
+          }
+        } catch (err) {
+          // No dispute exists for this review
+        }
+      }
+
+      setDisputes(disputeData);
+    } catch (err) {
+      console.error('Error loading dispute data:', err);
     }
   };
 
@@ -128,10 +160,41 @@ const ReviewsDisplay: React.FC<ReviewsDisplayProps> = ({ paperId, isVisible = tr
                   <span className={`font-semibold ${getScoreColor(review.score)}`}>
                     {getScoreText(review.score)}
                   </span>
+                  {disputes[review.reviewer] && (
+                    <span style={{ 
+                      fontSize: '0.75rem', 
+                      padding: '0.25rem 0.5rem', 
+                      backgroundColor: '#ffeaa7', 
+                      color: '#856404', 
+                      borderRadius: '4px',
+                      border: '1px solid #ffd93d'
+                    }}>
+                      Disputed #{disputes[review.reviewer]}
+                    </span>
+                  )}
                 </div>
-                <span className="text-sm text-gray-500">
-                  {formatDate(review.submitTime)}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span className="text-sm text-gray-500">
+                    {formatDate(review.submitTime)}
+                  </span>
+                  {account && account !== review.reviewer && !disputes[review.reviewer] && (
+                    <button
+                      onClick={() => setShowDisputeForm({ paperId, reviewer: review.reviewer })}
+                      style={{
+                        fontSize: '0.75rem',
+                        padding: '0.25rem 0.5rem',
+                        backgroundColor: '#ff6b6b',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                      title="Dispute this review"
+                    >
+                      Dispute
+                    </button>
+                  )}
+                </div>
               </div>
               
               {review.comment && (
@@ -146,6 +209,18 @@ const ReviewsDisplay: React.FC<ReviewsDisplayProps> = ({ paperId, isVisible = tr
             {reviews.length} review{reviews.length !== 1 ? 's' : ''} • Paper is finalized
           </div>
         </div>
+      )}
+
+      {/* Dispute Form Modal */}
+      {showDisputeForm && (
+        <DisputeForm
+          paperId={showDisputeForm.paperId}
+          reviewerAddress={showDisputeForm.reviewer}
+          onClose={() => setShowDisputeForm(null)}
+          onSuccess={() => {
+            loadReviews(); // Reload to show new dispute
+          }}
+        />
       )}
     </div>
   );
