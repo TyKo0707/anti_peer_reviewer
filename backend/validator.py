@@ -27,10 +27,6 @@ def validate_pdf_format(file_path: str) -> dict:
                 "reason": "Missing common academic sections: found only {}".format(', '.join(keyword_hits))
             }
 
-        # Check for figures or tables
-        if not re.search(r'figure\s+\d+', text) and not re.search(r'table\s+\d+', text):
-            return {"valid": False, "reason": "No figures or tables detected"}
-
         # Check for DOIs or citations
         if not re.search(r'doi:\s*10\.\d{4,9}/[-._;()/:a-z0-9]+', text) and \
                 not re.search(r'arxiv:\s*\d{4}\.\d{4,5}', text) and \
