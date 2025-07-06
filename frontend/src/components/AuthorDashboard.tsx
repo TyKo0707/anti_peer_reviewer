@@ -389,7 +389,6 @@ const AuthorDashboard: React.FC = () => {
               <div>
                 <h3>Paper #{paper.id}</h3>
                 <div className="paper-meta">
-                  <p><strong>CID:</strong> {paper.cid}</p>
                   <p><strong>PDF:</strong> <a href={paper.cid} target="_blank" rel="noreferrer">Download</a></p>
                   <p><strong>Field:</strong> {paper.fieldClassification}</p>
                   <p><strong>Keywords:</strong> {paper.keywords.join(', ')}</p>
