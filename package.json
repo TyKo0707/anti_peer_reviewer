@@ -1,0 +1,32 @@
+{
+  "name": "decentralized-peer-review",
+  "version": "1.0.0",
+  "description": "A decentralized peer-review system built on blockchain",
+  "main": "index.js",
+  "scripts": {
+    "compile": "hardhat compile",
+    "deploy": "hardhat run scripts/deploy.ts --network sepolia",
+    "frontend": "cd frontend && npm start",
+    "build": "hardhat compile && cd frontend && npm run build",
+    "test": "hardhat test"
+  },
+  "keywords": [
+    "blockchain",
+    "peer-review",
+    "decentralized",
+    "ethereum"
+  ],
+  "author": "Decentralized Peer Review Team",
+  "license": "MIT",
+  "devDependencies": {
+    "hardhat": "^2.22.0",
+    "@nomicfoundation/hardhat-ethers": "^3.0.0",
+    "ethers": "^6.12.2",
+    "@openzeppelin/contracts": "^5.0.1",
+    "@types/node": "^24.0.10",
+    "dotenv": "^17.0.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {}
+}
